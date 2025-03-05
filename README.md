@@ -51,8 +51,17 @@ This GitHub action can take several inputs to configure its behaviors:
 | path         | String[] | ø       | `node_modules`                                                        | One or more path to store                                         |
 | key          | String   | ø       | `node-modules-${{ runner.os }}-${{ hashFiles('package-lock.json') }}` | Key to use as cache name                                          |
 | restore-keys | String[] | ø       | `node-modules-${{ runner.os }}-`                                      | Alternative keys to use when looking for the best cache available |
+| compression  | String   | `auto`  | `gzip`, `zstd`, `auto` or `none`                                      | Compression algorithm to use                                      |
 
 **Note**: the `path` and `restore-keys` inputs can contains multiple value separated by a new line.
+
+## Compression algorithm
+
+When compressing or decompressing the cache archive, the action will
+lookup for the best compression algorithm to use (if `auto` is selected).
+If `zstd` is available, it will be used instead of `gzip` by default. The
+compression method will be added to the object's metadata on the Bucket.
+Thanks to this, when decompressing, the correct algorithm will be used.
 
 ## Outputs
 
@@ -87,14 +96,6 @@ This GitHub action will output the following values:
     restore-keys: |
       npm-and-node-modules-${{ runner.os }}-
 ```
-
-## Compression algorithm
-
-When compressing or decompressing the cache archive, the action will
-lookup for the best compression algorithm to use. If `zstd` is available,
-it will be used instead of `gzip` by default. The compression method
-will be added to the object's metadata on the Bucket. Thanks to this,
-when decompressing, the correct algorithm will be used.
 
 > Installing `zstd` on Ubuntu is simple as doing a `apt install zstd`.
 

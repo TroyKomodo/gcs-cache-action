@@ -16,13 +16,17 @@ inputs:
     description: Substitution keys to use when cache miss
     default: ''
     required: false
+  compression-method:
+    description: Compression method to use
+    default: 'auto'
+    required: false
 
 outputs:
   cache-hit:
     description: Whether the cache was successfuly restored
 
 runs:
-  using: 'node16'
+  using: 'node20'
   main: 'dist/main/index.js'
   post: 'dist/post/index.js'
   post-if: 'success()'

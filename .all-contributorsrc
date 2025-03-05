@@ -3,9 +3,7 @@
   "projectOwner": "MansaGroup",
   "repoType": "github",
   "repoHost": "https://github.com",
-  "files": [
-    "README.md"
-  ],
+  "files": ["README.md"],
   "imageSize": 100,
   "commit": true,
   "commitConvention": "angular",
@@ -15,10 +13,7 @@
       "name": "Jérémy Levilain",
       "avatar_url": "https://avatars.githubusercontent.com/u/6763873?v=4",
       "profile": "https://jeremylvln.fr/",
-      "contributions": [
-        "code",
-        "ideas"
-      ]
+      "contributions": ["code", "ideas"]
     }
   ],
   "contributorsPerLine": 7

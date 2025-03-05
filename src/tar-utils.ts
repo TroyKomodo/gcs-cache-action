@@ -1,19 +1,61 @@
-/* eslint-disable sonarjs/no-duplicate-string */
-
 import * as exec from '@actions/exec';
 import * as semver from 'semver';
 
 const ZSTD_WITHOUT_LONG_VERSION = '1.3.2';
 
-export enum CompressionMethod {
-  GZIP = 'gzip',
-  ZSTD_WITHOUT_LONG = 'zstd (without long)',
-  ZSTD = 'zstd',
+export const valid_requested_compression_methods = [
+  'gzip',
+  'zstd',
+  'auto',
+  'none',
+] as const;
+export const valid_file_compression_methods = [
+  'gzip',
+  'zstd',
+  'zstd (without long)',
+  'none',
+] as const;
+
+export type FileCompressionMethod =
+  (typeof valid_file_compression_methods)[number];
+export type RequestedCompressionMethod =
+  (typeof valid_requested_compression_methods)[number];
+
+export function validateRequestedCompressionMethod(
+  compressionMethod: string,
+): RequestedCompressionMethod | null {
+  if (
+    !valid_requested_compression_methods.includes(
+      compressionMethod as RequestedCompressionMethod,
+    )
+  ) {
+    return null;
+  }
+
+  return compressionMethod as RequestedCompressionMethod;
 }
 
-async function getTarCompressionMethod(): Promise<CompressionMethod> {
-  if (process.platform === 'win32') {
-    return CompressionMethod.GZIP;
+export function validateFileCompressionMethod(
+  compressionMethod: string,
+): FileCompressionMethod | null {
+  if (
+    !valid_file_compression_methods.includes(
+      compressionMethod as FileCompressionMethod,
+    )
+  ) {
+    return null;
+  }
+
+  return compressionMethod as FileCompressionMethod;
+}
+
+async function getTarCompressionMethod(
+  specifiedCompressionMethod: RequestedCompressionMethod,
+): Promise<FileCompressionMethod> {
+  if (specifiedCompressionMethod === 'gzip') {
+    return 'gzip';
+  } else if (specifiedCompressionMethod === 'none') {
+    return 'none';
   }
 
   const [zstdOutput, zstdVersion] = await exec
@@ -23,76 +65,75 @@ async function getTarCompressionMethod(): Promise<CompressionMethod> {
     })
     .then((out) => out.stdout.trim())
     .then((out) => {
-      const extractedVersion = /v(\d+(?:\.\d+){0,})/.exec(out);
+      const extractedVersion = /v(\d+(?:\.\d+)*)/.exec(out);
       return [out, extractedVersion ? extractedVersion[1] : null];
     })
     .catch(() => ['', null]);
 
   if (!zstdOutput?.toLowerCase().includes('zstd command line interface')) {
-    return CompressionMethod.GZIP;
+    if (specifiedCompressionMethod === 'auto') {
+      return 'gzip';
+    } else {
+      throw new Error('zstd is not installed');
+    }
   } else if (
     !zstdVersion ||
     semver.lt(zstdVersion, ZSTD_WITHOUT_LONG_VERSION)
   ) {
-    return CompressionMethod.ZSTD_WITHOUT_LONG;
+    return 'zstd (without long)';
   } else {
-    return CompressionMethod.ZSTD;
+    return 'zstd';
   }
 }
 
 export async function createTar(
+  requestedCompressionMethod: RequestedCompressionMethod,
   archivePath: string,
   paths: string[],
   cwd: string,
-): Promise<CompressionMethod> {
-  const compressionMethod = await getTarCompressionMethod();
+): Promise<FileCompressionMethod> {
+  const compressionMethod = await getTarCompressionMethod(
+    requestedCompressionMethod,
+  );
   console.log(`🔹 Using '${compressionMethod}' compression method.`);
 
-  const compressionArgs =
-    compressionMethod === CompressionMethod.GZIP
-      ? ['-z']
-      : compressionMethod === CompressionMethod.ZSTD_WITHOUT_LONG
-      ? ['--use-compress-program', 'zstd -T0']
-      : ['--use-compress-program', 'zstd -T0 --long=30'];
+  const args = ['-c'];
 
-  await exec.exec('tar', [
-    '-c',
-    ...compressionArgs,
-    '--posix',
-    '-P',
-    '-f',
-    archivePath,
-    '-C',
-    cwd,
-    ...paths,
-  ]);
+  if (compressionMethod === 'gzip') {
+    args.push('-z');
+  } else if (compressionMethod === 'zstd (without long)') {
+    args.push('--use-compress-program', 'zstd -T0');
+  } else if (compressionMethod === 'zstd') {
+    args.push('--use-compress-program', 'zstd -T0 --long=30');
+  }
+
+  args.push('--posix', '-P', '-f', archivePath, '-C', cwd, ...paths);
+
+  await exec.exec('tar', args);
 
   return compressionMethod;
 }
 
 export async function extractTar(
   archivePath: string,
-  compressionMethod: CompressionMethod,
+  compressionMethod: FileCompressionMethod,
   cwd: string,
 ): Promise<void> {
   console.log(
     `🔹 Detected '${compressionMethod}' compression method from object metadata.`,
   );
 
-  const compressionArgs =
-    compressionMethod === CompressionMethod.GZIP
-      ? ['-z']
-      : compressionMethod === CompressionMethod.ZSTD_WITHOUT_LONG
-      ? ['--use-compress-program', 'zstd -d']
-      : ['--use-compress-program', 'zstd -d --long=30'];
+  const args = ['-x'];
 
-  await exec.exec('tar', [
-    '-x',
-    ...compressionArgs,
-    '-P',
-    '-f',
-    archivePath,
-    '-C',
-    cwd,
-  ]);
+  if (compressionMethod === 'gzip') {
+    args.push('-z');
+  } else if (compressionMethod === 'zstd (without long)') {
+    args.push('--use-compress-program', 'zstd -d');
+  } else if (compressionMethod === 'zstd') {
+    args.push('--use-compress-program', 'zstd -d --long=30');
+  }
+
+  args.push('-P', '-f', archivePath, '-C', cwd);
+
+  await exec.exec('tar', args);
 }

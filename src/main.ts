@@ -3,10 +3,9 @@ import * as github from '@actions/github';
 import { Storage, File, Bucket } from '@google-cloud/storage';
 import { withFile as withTemporaryFile } from 'tmp-promise';
 
-import { ObjectMetadata } from './gcs-utils';
 import { getInputs } from './inputs';
 import { CacheHitKindState, saveState } from './state';
-import { extractTar } from './tar-utils';
+import { extractTar, validateFileCompressionMethod } from './tar-utils';
 
 async function getBestMatch(
   bucket: Bucket,
@@ -37,11 +36,13 @@ async function getBestMatch(
       prefix: `${folderPrefix}/${restoreKeys[restoreKeys.length - 1]}`,
     })
     .then(([files]) =>
-      files.sort(
-        (a, b) =>
-          new Date((b.metadata as ObjectMetadata).updated).getTime() -
-          new Date((a.metadata as ObjectMetadata).updated).getTime(),
-      ),
+      files
+        .filter((file) => file.metadata.updated)
+        .sort(
+          (a, b) =>
+            new Date(b.metadata.updated!).getTime() -
+            new Date(a.metadata.updated!).getTime(),
+        ),
     )
     .catch((err) => {
       core.error('Failed to list cache candidates');
@@ -54,7 +55,7 @@ async function getBestMatch(
         bucketFiles.map((f) => ({
           name: f.name,
           metadata: {
-            updated: (f.metadata as ObjectMetadata).updated,
+            updated: f.metadata.updated,
           },
         })),
       )}.`,
@@ -99,6 +100,7 @@ async function main() {
       path: inputs.path,
       cacheHitKind: 'none',
       targetFileName: exactFileName,
+      compressionMethod: inputs.compressionMethod,
     });
     core.setOutput('cache-hit', 'false');
     console.log('😢 No cache candidate found.');
@@ -109,7 +111,7 @@ async function main() {
 
   const bestMatchMetadata = await bestMatch
     .getMetadata()
-    .then(([metadata]) => metadata as ObjectMetadata)
+    .then(([metadata]) => metadata)
     .catch((err) => {
       core.error('Failed to read object metadatas');
       throw err;
@@ -120,14 +122,20 @@ async function main() {
   const compressionMethod =
     bestMatchMetadata?.metadata?.['Cache-Action-Compression-Method'];
 
+  const fileCompressionMethod =
+    typeof compressionMethod === 'string'
+      ? validateFileCompressionMethod(compressionMethod)
+      : null;
+
   core.debug(`Best match compression method: ${compressionMethod}.`);
 
-  if (!bestMatchMetadata || !compressionMethod) {
+  if (!bestMatchMetadata || !fileCompressionMethod) {
     saveState({
       bucket: inputs.bucket,
       path: inputs.path,
       cacheHitKind: 'none',
       targetFileName: exactFileName,
+      compressionMethod: inputs.compressionMethod,
     });
 
     core.setOutput('cache-hit', 'false');
@@ -153,7 +161,7 @@ async function main() {
 
     await core
       .group('🗜️ Extracting cache archive', () =>
-        extractTar(tmpFile.path, compressionMethod, workspace),
+        extractTar(tmpFile.path, fileCompressionMethod, workspace),
       )
       .catch((err) => {
         core.error('Failed to extract the archive');
@@ -165,6 +173,7 @@ async function main() {
       bucket: inputs.bucket,
       cacheHitKind: bestMatchKind,
       targetFileName: exactFileName,
+      compressionMethod: inputs.compressionMethod,
     });
     core.setOutput('cache-hit', bestMatchKind === 'exact');
     console.log('✅ Successfully restored cache.');

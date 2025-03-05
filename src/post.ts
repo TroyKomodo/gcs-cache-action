@@ -4,7 +4,6 @@ import { Storage } from '@google-cloud/storage';
 import * as path from 'path';
 import { withFile as withTemporaryFile } from 'tmp-promise';
 
-import { CacheActionMetadata } from './gcs-utils';
 import { getState } from './state';
 import { createTar } from './tar-utils';
 
@@ -51,18 +50,18 @@ async function main() {
   return withTemporaryFile(async (tmpFile) => {
     const compressionMethod = await core
       .group('🗜️ Creating cache archive', () =>
-        createTar(tmpFile.path, paths, workspace),
+        createTar(state.compressionMethod, tmpFile.path, paths, workspace),
       )
       .catch((err) => {
         core.error('Failed to create the archive');
         throw err;
       });
 
-    const customMetadata: CacheActionMetadata = {
+    const metadata = {
       'Cache-Action-Compression-Method': compressionMethod,
     };
 
-    core.debug(`Metadata: ${JSON.stringify(customMetadata)}.`);
+    core.debug(`Metadata: ${JSON.stringify(metadata)}.`);
 
     await core
       .group('🌐 Uploading cache archive to bucket', async () => {
@@ -70,9 +69,7 @@ async function main() {
 
         await bucket.upload(tmpFile.path, {
           destination: targetFileName,
-          metadata: {
-            metadata: customMetadata,
-          },
+          metadata,
         });
       })
       .catch((err) => {
