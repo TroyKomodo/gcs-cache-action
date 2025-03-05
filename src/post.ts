@@ -69,7 +69,9 @@ async function main() {
 
         await bucket.upload(tmpFile.path, {
           destination: targetFileName,
-          metadata,
+          metadata: {
+            metadata,
+          },
         });
       })
       .catch((err) => {
